@@ -1,0 +1,81 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
+
+entity sistema_completo is
+    Port (
+        clk          : in  STD_LOGIC;
+        reset        : in  STD_LOGIC;
+        -- Teclado matricial
+        teclado_rows : in  STD_LOGIC_VECTOR(3 downto 0);
+        teclado_cols : out STD_LOGIC_VECTOR(3 downto 0);
+        -- LED de prueba
+        led_prueba   : out STD_LOGIC;
+        -- Matriz LED
+        row          : out STD_LOGIC_VECTOR(7 downto 0);
+        r            : out STD_LOGIC_VECTOR(7 downto 0);
+        g            : out STD_LOGIC_VECTOR(7 downto 0);
+        b            : out STD_LOGIC_VECTOR(7 downto 0)
+    );
+end sistema_completo;
+
+architecture Structural of sistema_completo is
+
+    component teclado
+        Port (
+            clk          : in  STD_LOGIC;
+            reset        : in  STD_LOGIC;
+            rows         : in  STD_LOGIC_VECTOR(3 downto 0);
+            cols         : out STD_LOGIC_VECTOR(3 downto 0);
+            tecla_codigo : out STD_LOGIC_VECTOR(3 downto 0);
+            tecla_valida : out STD_LOGIC
+        );
+    end component;
+    
+    -- NUEVO CONTROLADOR COMPLETO
+component control_matriz_ruleta
+    Port (
+        clk            : in  STD_LOGIC;
+        reset          : in  STD_LOGIC;
+        numero_entrada : in  STD_LOGIC_VECTOR(3 downto 0);
+        entrada_valida : in  STD_LOGIC;
+        led_tecla_detectada : out STD_LOGIC;
+        row_out        : out STD_LOGIC_VECTOR(7 downto 0);
+        r_out          : out STD_LOGIC_VECTOR(7 downto 0);
+        g_out          : out STD_LOGIC_VECTOR(7 downto 0);
+        b_out          : out STD_LOGIC_VECTOR(7 downto 0)
+    );
+end component;
+    
+    signal tecla_codigo_sig : STD_LOGIC_VECTOR(3 downto 0);
+    signal tecla_valida_sig : STD_LOGIC;
+    signal led_estado_sig   : STD_LOGIC;
+    
+begin
+
+    led_prueba <= led_estado_sig;
+
+    u_teclado: teclado
+    port map (
+        clk          => clk,
+        reset        => reset,
+        rows         => teclado_rows,
+        cols         => teclado_cols,
+        tecla_codigo => tecla_codigo_sig,
+        tecla_valida => tecla_valida_sig
+    );
+    
+u_matriz: control_matriz_ruleta
+port map (
+    clk            => clk,
+    reset          => reset,
+    numero_entrada => tecla_codigo_sig,
+    entrada_valida => tecla_valida_sig,
+    led_tecla_detectada => led_estado_sig,
+    row_out        => row,
+    r_out          => r,
+    g_out          => g,
+    b_out          => b
+);
+
+end Structural;
