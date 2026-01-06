@@ -1,0 +1,861 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
+
+entity control_matriz_ruleta is
+    Port (
+        clk            : in  STD_LOGIC;
+        reset          : in  STD_LOGIC;
+        numero_entrada : in  STD_LOGIC_VECTOR(3 downto 0);
+        entrada_valida : in  STD_LOGIC;
+        -- LED de prueba
+        led_tecla_detectada : out STD_LOGIC;
+        -- Salidas a matriz
+        row_out        : out STD_LOGIC_VECTOR(7 downto 0);
+        r_out          : out STD_LOGIC_VECTOR(7 downto 0);
+        g_out          : out STD_LOGIC_VECTOR(7 downto 0);
+        b_out          : out STD_LOGIC_VECTOR(7 downto 0)
+    );
+end control_matriz_ruleta;
+
+architecture Behavioral of control_matriz_ruleta is
+
+    component memoria_patrones  -- Para patrones 8x8
+        Port (
+            clk       : in  std_logic;
+            direccion : in  integer range 0 to 79;
+            dato_out  : out std_logic_vector(7 downto 0)
+        );
+    end component;
+    
+    component memoria_digitos_5x3  -- Para dígitos 5x3
+        Port (
+            clk       : in  std_logic;
+            direccion : in  integer range 0 to 49;
+            dato_out  : out std_logic_vector(2 downto 0)
+        );
+    end component;
+    
+    -- Señales
+    signal tecla_detectada : STD_LOGIC := '0';
+    signal fila_actual   : integer range 0 to 7 := 0;
+    signal contador      : integer := 0;
+    signal contador_random : integer range 0 to 999999 := 0;
+    signal random_num    : integer range 0 to 9 := 0;
+    
+    -- Memoria 8x8
+    signal direccion_mem_8x8 : integer range 0 to 79 := 0;
+    signal dato_mem_8x8      : std_logic_vector(7 downto 0);
+    signal patron_fila_8x8   : std_logic_vector(7 downto 0);
+    
+    -- Memorias 5x3 para dos dígitos
+    signal direccion_decena_5x3 : integer range 0 to 49 := 0;
+    signal direccion_unidad_5x3 : integer range 0 to 49 := 0;
+    signal dato_decena_5x3      : std_logic_vector(2 downto 0);
+    signal dato_unidad_5x3      : std_logic_vector(2 downto 0);
+    
+    -- Memorias 5x3 para puntos TUXX
+    signal direccion_puntos_decena_5x3 : integer range 0 to 49 := 0;
+    signal direccion_puntos_unidad_5x3 : integer range 0 to 49 := 0;
+    signal dato_puntos_decena_5x3      : std_logic_vector(2 downto 0);
+    signal dato_puntos_unidad_5x3      : std_logic_vector(2 downto 0);
+    
+    -- Color
+    signal color_texto   : STD_LOGIC_VECTOR(2 downto 0);
+    signal color_fondo   : STD_LOGIC_VECTOR(2 downto 0);
+    signal numero_int    : integer range 0 to 9 := 0;
+    
+    -- Estados del juego
+    type estado_juego is (
+        ESTADO_TU50,
+        ESTADO_MENU_COLOR,
+        ESTADO_CONFIRMAR_COLOR,
+        ESTADO_INGRESO_NUMERO,
+        ESTADO_GIRO_RULETA,
+        ESTADO_RESULTADO_RULETA,
+        ESTADO_ERROR_X
+    );
+    signal estado_actual : estado_juego := ESTADO_TU50;
+    
+    -- Color seleccionado
+    signal color_seleccionado : integer range 0 to 2 := 0;
+    signal tecla_almacenada : STD_LOGIC_VECTOR(3 downto 0) := "0000";
+    
+    -- Números ingresados (2 dígitos)
+    signal decena_actual : STD_LOGIC_VECTOR(3 downto 0) := "0000";  -- Primer dígito
+    signal unidad_actual : STD_LOGIC_VECTOR(3 downto 0) := "0000";  -- Segundo dígito
+    
+    -- Control de teclas
+    signal entrada_valida_prev : STD_LOGIC := '0';
+    
+    -- Señal para patrón TU50
+    signal patron_tu50_fila_sig : std_logic_vector(7 downto 0);
+    
+    -- Señal para fila de dígito (0-4) - ahora usando filas 3-7
+    signal fila_digito_sig : integer range 0 to 4 := 0;
+    signal mostrar_digitos : STD_LOGIC := '0';
+    
+    -- Señales para cálculos
+    signal digito_decena_int : integer range 0 to 9 := 0;
+    signal digito_unidad_int : integer range 0 to 9 := 0;
+    signal numero_completo   : integer range 0 to 99 := 0;
+    
+    -- Contador de puntos TUXX
+    signal puntos_actuales : integer range 0 to 99 := 50;  -- Inicia en 50
+    signal puntos_decena_actual : integer range 0 to 9 := 5;
+    signal puntos_unidad_actual : integer range 0 to 9 := 0;
+    
+    -- Señal para mostrar X en pantalla
+    signal mostrar_x : STD_LOGIC := '0';
+    
+    -- Señales para ruleta
+    signal numero_ruleta : integer range 0 to 9 := 0;
+    signal color_ruleta : integer range 0 to 2 := 0;  -- 0:rojo, 1:azul, 2:verde
+    signal ganancia : integer range 0 to 99 := 0;
+    signal resultado_ruleta : STD_LOGIC := '0';  -- 0:perdió, 1:ganó
+    signal contador_giro : integer range 0 to 5000000 := 0;  -- AUMENTADO: más lento
+    signal giro_activo : STD_LOGIC := '0';
+    signal ruleta_numero_final : integer range 0 to 9 := 0;
+    
+    -- Contador para parpadeo lento
+    signal contador_parpadeo : integer := 0;
+    signal bit_parpadeo_lento : STD_LOGIC := '0';
+
+    -- Señales temporales para las salidas RGB (para evitar leer de 'out')
+    signal r_out_temp : STD_LOGIC_VECTOR(7 downto 0) := (others => '1');
+    signal g_out_temp : STD_LOGIC_VECTOR(7 downto 0) := (others => '1');
+    signal b_out_temp : STD_LOGIC_VECTOR(7 downto 0) := (others => '1');
+
+begin
+
+    -- Conectar señales temporales a salidas
+    r_out <= r_out_temp;
+    g_out <= g_out_temp;
+    b_out <= b_out_temp;
+
+    -- Instancia memoria 8x8
+    u_memoria_8x8: memoria_patrones
+    port map (
+        clk       => clk,
+        direccion => direccion_mem_8x8,
+        dato_out  => dato_mem_8x8
+    );
+    
+    -- Instancias memoria 5x3 para dígitos ingresados
+    u_memoria_decena_5x3: memoria_digitos_5x3
+    port map (
+        clk       => clk,
+        direccion => direccion_decena_5x3,
+        dato_out  => dato_decena_5x3
+    );
+    
+    u_memoria_unidad_5x3: memoria_digitos_5x3
+    port map (
+        clk       => clk,
+        direccion => direccion_unidad_5x3,
+        dato_out  => dato_unidad_5x3
+    );
+    
+    -- Instancias memoria 5x3 para puntos TUXX
+    u_memoria_puntos_decena_5x3: memoria_digitos_5x3
+    port map (
+        clk       => clk,
+        direccion => direccion_puntos_decena_5x3,
+        dato_out  => dato_puntos_decena_5x3
+    );
+    
+    u_memoria_puntos_unidad_5x3: memoria_digitos_5x3
+    port map (
+        clk       => clk,
+        direccion => direccion_puntos_unidad_5x3,
+        dato_out  => dato_puntos_unidad_5x3
+    );
+    
+    -- ===========================================
+    -- GENERADOR DE NÚMERO RANDOM (LFSR simple)
+    -- ===========================================
+    process(clk, reset)
+        variable lfsr : std_logic_vector(15 downto 0) := "1100110011001100";
+    begin
+        if reset = '0' then
+            lfsr := "1100110011001100";
+            random_num <= 0;
+        elsif rising_edge(clk) then
+            contador_random <= contador_random + 1;
+            
+            if contador_random = 99999 then  -- Más rápido para mejor animación
+                contador_random <= 0;
+                -- Actualizar LFSR
+                lfsr := lfsr(14 downto 0) & (lfsr(15) xor lfsr(14) xor lfsr(12) xor lfsr(3));
+                -- Convertir a número 0-9
+                random_num <= to_integer(unsigned(lfsr(3 downto 0))) mod 10;
+            end if;
+        end if;
+    end process;
+    
+    -- ===========================================
+    -- CONTADOR PARA PARPADEO LENTO
+    -- ===========================================
+    process(clk)
+    begin
+        if rising_edge(clk) then
+            contador_parpadeo <= contador_parpadeo + 1;
+            if contador_parpadeo = 15000000 then  
+                contador_parpadeo <= 0;
+                bit_parpadeo_lento <= not bit_parpadeo_lento;
+            end if;
+        end if;
+    end process;
+    
+    -- ===========================================
+    -- DETECTOR DE FLANCO
+    -- ===========================================
+    process(clk, reset)
+    begin
+        if reset = '0' then
+            tecla_detectada <= '0';
+            entrada_valida_prev <= '0';
+        elsif rising_edge(clk) then
+            entrada_valida_prev <= entrada_valida;
+            
+            -- Detectar flanco de subida
+            if entrada_valida_prev = '0' and entrada_valida = '1' then
+                tecla_detectada <= '1';
+            else
+                tecla_detectada <= '0';
+            end if;
+        end if;
+    end process;
+    
+    led_tecla_detectada <= tecla_detectada;
+    
+    -- Convertir dígitos a enteros
+    digito_decena_int <= to_integer(unsigned(decena_actual)) when decena_actual <= "1001" else 0;
+    digito_unidad_int <= to_integer(unsigned(unidad_actual)) when unidad_actual <= "1001" else 0;
+    numero_completo <= (digito_decena_int * 10) + digito_unidad_int;
+    
+    -- Calcular dígitos de puntos actuales
+    puntos_decena_actual <= puntos_actuales / 10;
+    puntos_unidad_actual <= puntos_actuales mod 10;
+    
+    -- Calcular fila para dígitos 5x3 - USAR FILAS 3-7
+    fila_digito_sig <= fila_actual - 3 when fila_actual >= 3 else 0;
+    mostrar_digitos <= '1' when (fila_actual >= 3 and fila_actual <= 7) else '0';
+    
+    -- ===========================================
+    -- DETERMINAR COLOR DE LA RULETA SEGÚN NÚMERO
+    -- ===========================================
+    process(numero_ruleta)
+    begin
+        case numero_ruleta is
+            when 0 => 
+                color_ruleta <= 2;  -- Verde (0)
+            when 1 | 3 | 5 | 7 | 9 => 
+                color_ruleta <= 1;  -- Azul (impares)
+            when 2 | 4 | 6 | 8 => 
+                color_ruleta <= 0;  -- Rojo (pares)
+            when others =>
+                color_ruleta <= 2;  -- Verde por defecto
+        end case;
+    end process;
+    
+    -- ===========================================
+    -- MÁQUINA DE ESTADOS PRINCIPAL
+    -- ===========================================
+    process(clk, reset)
+        variable temp_ganancia : integer range 0 to 99 := 0;
+    begin
+        if reset = '0' then
+            estado_actual <= ESTADO_TU50;
+            color_seleccionado <= 0;
+            tecla_almacenada <= "0000";
+            decena_actual <= "0000";
+            unidad_actual <= "0000";
+            puntos_actuales <= 50;
+            mostrar_x <= '0';
+            giro_activo <= '0';
+            contador_giro <= 0;
+            ruleta_numero_final <= 0;
+            resultado_ruleta <= '0';
+            ganancia <= 0;
+            
+        elsif rising_edge(clk) then
+            -- Contador para giro de ruleta
+            if giro_activo = '1' then
+                if contador_giro < 5000000 then  -- GIRO MÁS LARGO: 5 millones de ciclos
+                    contador_giro <= contador_giro + 1;
+                    numero_ruleta <= random_num;  -- Mostrar números aleatorios durante el giro
+                else
+                    -- Fin del giro
+                    giro_activo <= '0';
+                    contador_giro <= 0;
+                    ruleta_numero_final <= random_num;  -- Guardar número final
+                    numero_ruleta <= random_num;  -- Mostrar número final
+                    estado_actual <= ESTADO_RESULTADO_RULETA;
+                    
+                    -- CALCULAR SI GANÓ O PERDIÓ
+                    if (color_seleccionado = 0 and color_ruleta = 0) or  -- Rojo
+                       (color_seleccionado = 1 and color_ruleta = 1) or  -- Azul
+                       (color_seleccionado = 2 and color_ruleta = 2) then  -- Verde
+                        resultado_ruleta <= '1';  -- Ganó
+                        
+                        -- Calcular ganancia
+                        if color_seleccionado = 0 then  -- Rojo
+                            temp_ganancia := numero_completo / 2;  -- Mitad redondeada hacia abajo
+                        elsif color_seleccionado = 1 then  -- Azul
+                            temp_ganancia := numero_completo / 2;  -- Mitad redondeada hacia abajo
+                        else  -- Verde
+                            temp_ganancia := numero_completo * 2;  -- Doble
+                        end if;
+                        
+                        -- Asegurar que no exceda 99
+                        if temp_ganancia > 99 then
+                            temp_ganancia := 99;
+                        end if;
+                        
+                        ganancia <= temp_ganancia;
+                        puntos_actuales <= puntos_actuales + temp_ganancia;
+                    else
+                        resultado_ruleta <= '0';  -- Perdió
+                        puntos_actuales <= puntos_actuales - numero_completo;
+                    end if;
+                end if;
+            end if;
+            
+            if tecla_detectada = '1' then
+                case estado_actual is
+                    when ESTADO_TU50 =>
+                        -- Tecla A para ir al menú de colores
+                        if numero_entrada = "1010" then  -- Tecla A
+                            estado_actual <= ESTADO_MENU_COLOR;
+                            color_seleccionado <= 0;
+                            tecla_almacenada <= "1010";  -- Almacenar A por defecto
+                        -- Tecla * para reset manual
+                        elsif numero_entrada = "1110" then  -- Tecla *
+                            -- Reset manual: volver a TU50 con 50 puntos
+                            estado_actual <= ESTADO_TU50;
+                            puntos_actuales <= 50;
+                            color_seleccionado <= 0;
+                            tecla_almacenada <= "0000";
+                            decena_actual <= "0000";
+                            unidad_actual <= "0000";
+                        end if;
+                        
+                    when ESTADO_MENU_COLOR =>
+                        -- A: mover al lado del rojo
+                        if numero_entrada = "1010" then  -- Tecla A
+                            color_seleccionado <= 0;
+                            tecla_almacenada <= "1010";  -- Almacenar A
+                        
+                        -- B: mover al lado del azul  
+                        elsif numero_entrada = "1011" then  -- Tecla B
+                            color_seleccionado <= 1;
+                            tecla_almacenada <= "1011";  -- Almacenar B
+                            
+                        -- C: mover al lado del verde
+                        elsif numero_entrada = "1100" then  -- Tecla C
+                            color_seleccionado <= 2;
+                            tecla_almacenada <= "1100";  -- Almacenar C
+                            
+                        -- #: confirmar color
+                        elsif numero_entrada = "1111" then  -- Tecla #
+                            estado_actual <= ESTADO_CONFIRMAR_COLOR;
+                        
+                        -- *: volver atrás (a TU50)
+                        elsif numero_entrada = "1110" then  -- Tecla *
+                            estado_actual <= ESTADO_TU50;
+                        end if;
+                        
+                    when ESTADO_CONFIRMAR_COLOR =>
+                        -- Mostrar número del color confirmado
+                        -- Cualquier tecla (incluyendo #) va a ingreso de número
+                        estado_actual <= ESTADO_INGRESO_NUMERO;
+                        decena_actual <= "0000";  -- Reset a 00
+                        unidad_actual <= "0000";
+                        
+                    when ESTADO_INGRESO_NUMERO =>
+                        -- Ingresar números 0-9
+                        if numero_entrada <= "1001" then  -- Tecla 0-9
+                            -- Desplazar: decena = unidad actual, unidad = nuevo número
+                            decena_actual <= unidad_actual;
+                            unidad_actual <= numero_entrada;
+                        
+                        -- #: confirmar apuesta
+                        elsif numero_entrada = "1111" then  -- Tecla #
+                            -- Verificar si la apuesta es válida
+                            if numero_completo <= puntos_actuales and numero_completo > 0 then
+                                estado_actual <= ESTADO_GIRO_RULETA;
+                                giro_activo <= '1';
+                                contador_giro <= 0;
+                            else
+                                -- Apuesta inválida
+                                estado_actual <= ESTADO_ERROR_X;
+                                mostrar_x <= '1';
+                                decena_actual <= "0000";
+                                unidad_actual <= "0000";
+                            end if;
+                        
+                        -- *: volver al menú de colores
+                        elsif numero_entrada = "1110" then  -- Tecla *
+                            estado_actual <= ESTADO_MENU_COLOR;
+                            decena_actual <= "0000";
+                            unidad_actual <= "0000";
+                        end if;
+                        
+                    when ESTADO_GIRO_RULETA =>
+                        -- En giro, esperar que termine el contador
+                        -- *: cancelar giro y volver a ingreso (no afecta puntos)
+                        if numero_entrada = "1110" then  -- Tecla *
+                            giro_activo <= '0';
+                            contador_giro <= 0;
+                            estado_actual <= ESTADO_INGRESO_NUMERO;
+                        end if;
+                        
+                    when ESTADO_RESULTADO_RULETA =>
+                        -- Mostrar resultado de la ruleta
+                        -- Cualquier tecla numérica vuelve a TU50
+                        if numero_entrada <= "1001" then
+                            estado_actual <= ESTADO_TU50;
+                            color_seleccionado <= 0;
+                            tecla_almacenada <= "0000";
+                            decena_actual <= "0000";
+                            unidad_actual <= "0000";
+                        -- *: volver a TU50
+                        elsif numero_entrada = "1110" then  -- Tecla *
+                            estado_actual <= ESTADO_TU50;
+                            color_seleccionado <= 0;
+                            tecla_almacenada <= "0000";
+                            decena_actual <= "0000";
+                            unidad_actual <= "0000";
+                        end if;
+                        
+                    when ESTADO_ERROR_X =>
+                        -- Cualquier tecla numérica vuelve a ingreso de número
+                        if numero_entrada <= "1001" then
+                            estado_actual <= ESTADO_INGRESO_NUMERO;
+                            mostrar_x <= '0';
+                        -- *: volver al menú de colores
+                        elsif numero_entrada = "1110" then  -- Tecla *
+                            estado_actual <= ESTADO_MENU_COLOR;
+                            mostrar_x <= '0';
+                        end if;
+                        
+                end case;
+            end if;
+        end if;
+    end process;
+    
+    -- ===========================================
+    -- CALCULAR DIRECCIONES DE MEMORIA
+    -- ===========================================
+    process(fila_actual, estado_actual, color_seleccionado, 
+            digito_decena_int, digito_unidad_int, tecla_almacenada, fila_digito_sig,
+            puntos_decena_actual, puntos_unidad_actual, mostrar_x,
+            numero_ruleta, resultado_ruleta, ganancia)
+    begin
+        -- Valores por defecto
+        direccion_mem_8x8 <= 0;
+        direccion_decena_5x3 <= 0;
+        direccion_unidad_5x3 <= 0;
+        direccion_puntos_decena_5x3 <= 0;
+        direccion_puntos_unidad_5x3 <= 0;
+        numero_int <= 0;
+        
+        case estado_actual is
+            when ESTADO_TU50 =>
+                -- Mostrar "TU" fijo y puntos variables
+                if fila_digito_sig < 5 then
+                    direccion_puntos_decena_5x3 <= (puntos_decena_actual * 5) + fila_digito_sig;
+                    direccion_puntos_unidad_5x3 <= (puntos_unidad_actual * 5) + fila_digito_sig;
+                end if;
+                numero_int <= puntos_unidad_actual;
+                direccion_mem_8x8 <= 0;
+                
+            when ESTADO_MENU_COLOR =>
+                -- No usar memoria 8x8 en este estado
+                direccion_mem_8x8 <= 0;
+                numero_int <= 0;
+                
+            when ESTADO_CONFIRMAR_COLOR =>
+                -- Mostrar número según color seleccionado
+                case color_seleccionado is
+                    when 0 =>  -- Rojo: mostrar 2
+                        direccion_mem_8x8 <= (2 * 8) + fila_actual;
+                        numero_int <= 2;
+                    when 1 =>  -- Azul: mostrar 1
+                        direccion_mem_8x8 <= (1 * 8) + fila_actual;
+                        numero_int <= 1;
+                    when 2 =>  -- Verde: mostrar 0
+                        direccion_mem_8x8 <= (0 * 8) + fila_actual;
+                        numero_int <= 0;
+                    when others =>
+                        direccion_mem_8x8 <= (5 * 8) + fila_actual;
+                        numero_int <= 5;
+                end case;
+                
+            when ESTADO_INGRESO_NUMERO =>
+                -- Mostrar dos dígitos 5x3
+                if fila_digito_sig < 5 then
+                    direccion_decena_5x3 <= (digito_decena_int * 5) + fila_digito_sig;
+                    direccion_unidad_5x3 <= (digito_unidad_int * 5) + fila_digito_sig;
+                else
+                    direccion_decena_5x3 <= 0;
+                    direccion_unidad_5x3 <= 0;
+                end if;
+                numero_int <= digito_unidad_int;
+                direccion_mem_8x8 <= 0;
+                
+            when ESTADO_GIRO_RULETA =>
+                -- Mostrar número de la ruleta girando
+                direccion_mem_8x8 <= (numero_ruleta * 8) + fila_actual;
+                numero_int <= numero_ruleta;
+                direccion_decena_5x3 <= 0;
+                direccion_unidad_5x3 <= 0;
+                
+            when ESTADO_RESULTADO_RULETA =>
+                -- Mostrar número final de la ruleta
+                direccion_mem_8x8 <= (numero_ruleta * 8) + fila_actual;
+                numero_int <= numero_ruleta;
+                direccion_decena_5x3 <= 0;
+                direccion_unidad_5x3 <= 0;
+                
+            when ESTADO_ERROR_X =>
+                -- Mostrar X en toda la pantalla
+                direccion_mem_8x8 <= (10 * 8) + fila_actual;  -- Asumiendo que la X está en posición 10
+                numero_int <= 0;
+                direccion_decena_5x3 <= 0;
+                direccion_unidad_5x3 <= 0;
+                
+        end case;
+    end process;
+    
+    -- ===========================================
+    -- GENERAR PATRÓN TUXX
+    -- ===========================================
+    process(fila_actual)
+    begin
+        case fila_actual is
+            when 0 => patron_tu50_fila_sig <= "01011110";  -- T volteado
+            when 1 => patron_tu50_fila_sig <= "01010100";  -- U volteado  
+            when 2 => patron_tu50_fila_sig <= "01110100";  -- espacio volteado
+            when others => patron_tu50_fila_sig <= "00000000";
+        end case;
+    end process;
+    
+    -- ===========================================
+    -- DETERMINAR COLORES
+    -- ===========================================
+    process(estado_actual, numero_int, color_seleccionado, tecla_almacenada, 
+            mostrar_x, color_ruleta, resultado_ruleta, estado_actual, numero_ruleta)
+    begin
+        -- Valores por defecto
+        color_texto <= "000";
+        color_fondo <= "000";
+        
+        case estado_actual is
+            when ESTADO_TU50 =>
+                color_texto <= "100";  -- Texto Rojo
+                color_fondo <= "000";  -- Fondo Negro
+                
+            when ESTADO_MENU_COLOR =>
+                color_texto <= "111";  -- Texto Blanco
+                color_fondo <= "000";  -- Fondo Negro
+                
+            when ESTADO_CONFIRMAR_COLOR =>
+                -- Mostrar número según tecla almacenada
+                color_texto <= "111";  -- Texto Blanco
+                case tecla_almacenada is
+                    when "1010" =>  -- A (Rojo)
+                        color_fondo <= "100";  -- Fondo Rojo
+                    when "1011" =>  -- B (Azul)
+                        color_fondo <= "001";  -- Fondo Azul
+                    when "1100" =>  -- C (Verde)
+                        color_fondo <= "010";  -- Fondo Verde
+                    when others =>
+                        color_fondo <= "000";  -- Fondo Negro
+                end case;
+                
+            when ESTADO_INGRESO_NUMERO =>
+                color_texto <= "100";  -- Texto Rojo
+                color_fondo <= "000";  -- Fondo Negro
+                
+            when ESTADO_GIRO_RULETA =>
+                color_texto <= "111";  -- Texto Blanco
+                case color_ruleta is
+                    when 0 =>  -- Rojo
+                        color_fondo <= "100";
+                    when 1 =>  -- Azul
+                        color_fondo <= "001";
+                    when 2 =>  -- Verde
+                        color_fondo <= "010";
+                    when others =>
+                        color_fondo <= "000";
+                end case;
+                
+            when ESTADO_RESULTADO_RULETA =>
+                color_texto <= "111";  -- Texto Blanco
+                -- El fondo debe ser según el COLOR del número de la ruleta
+                case color_ruleta is
+                    when 0 =>  -- Rojo
+                        color_fondo <= "100";
+                    when 1 =>  -- Azul
+                        color_fondo <= "001";
+                    when 2 =>  -- Verde (0)
+                        color_fondo <= "010";
+                    when others =>
+                        color_fondo <= "000";
+                end case;
+                
+            when ESTADO_ERROR_X =>
+                color_texto <= "111";  -- Texto Blanco (X)
+                color_fondo <= "100";  -- Fondo Rojo (error)
+                
+        end case;
+    end process;
+    
+    -- ===========================================
+    -- MULTIPLEXACIÓN DE FILAS
+    -- ===========================================
+    process(clk)
+    begin
+        if rising_edge(clk) then
+            if contador < 10000 then
+                contador <= contador + 1;
+            else
+                contador <= 0;
+                
+                if fila_actual = 7 then
+                    fila_actual <= 0;
+                else
+                    fila_actual <= fila_actual + 1;
+                end if;
+            end if;
+            
+            -- Registrar patrones 8x8
+            patron_fila_8x8 <= dato_mem_8x8;
+        end if;
+    end process;
+    
+    -- ===========================================
+    -- ACTIVAR FILA ACTUAL
+    -- ===========================================
+    process(fila_actual)
+    begin
+        row_out <= (others => '0');
+        row_out(fila_actual) <= '1';
+    end process;
+    
+    -- ===========================================
+    -- ASIGNAR COLORES A LA MATRIZ (CORREGIDO PARA PARPADEO)
+    -- ===========================================
+    process(fila_actual, estado_actual, patron_fila_8x8, 
+            dato_decena_5x3, dato_unidad_5x3, color_texto, color_fondo, 
+            patron_tu50_fila_sig, color_seleccionado, mostrar_digitos,
+            dato_puntos_decena_5x3, dato_puntos_unidad_5x3, mostrar_x,
+            resultado_ruleta, color_ruleta, bit_parpadeo_lento)
+    begin
+        -- Inicializar salidas (LEDs apagados)
+        r_out_temp <= (others => '1');
+        g_out_temp <= (others => '1');
+        b_out_temp <= (others => '1');
+        
+        case estado_actual is
+            when ESTADO_TU50 =>
+                -- Mostrar "TU" fijo en filas 0-2 (rojo)
+                if fila_actual < 3 then
+                    for col in 0 to 7 loop
+                        if patron_tu50_fila_sig(col) = '1' then
+                            r_out_temp(col) <= '0';  -- Rojo
+                        end if;
+                    end loop;
+                end if;
+                
+                -- Mostrar puntos en filas 3-7 (rojo)
+                if mostrar_digitos = '1' then
+                    -- Dígito izquierdo (decena) - columnas 1-3
+                    for col_bit in 0 to 2 loop
+                        if dato_puntos_decena_5x3(col_bit) = '1' then
+                            case col_bit is
+                                when 0 => r_out_temp(3) <= '0';  -- Bit 0 -> col 3
+                                when 1 => r_out_temp(2) <= '0';  -- Bit 1 -> col 2
+                                when 2 => r_out_temp(1) <= '0';  -- Bit 2 -> col 1
+                                when others => null;
+                            end case;
+                        end if;
+                    end loop;
+                    
+                    -- Dígito derecho (unidad) - columnas 5-7
+                    for col_bit in 0 to 2 loop
+                        if dato_puntos_unidad_5x3(col_bit) = '1' then
+                            case col_bit is
+                                when 0 => r_out_temp(7) <= '0';  -- Bit 0 -> col 7
+                                when 1 => r_out_temp(6) <= '0';  -- Bit 1 -> col 6
+                                when 2 => r_out_temp(5) <= '0';  -- Bit 2 -> col 5
+                                when others => null;
+                            end case;
+                        end if;
+                    end loop;
+                end if;
+                
+            when ESTADO_MENU_COLOR =>
+                -- MOSTRAR 3 LEDs DE COLOR + LED BLANCO DE SELECCIÓN
+                -- LED Rojo (ARRIBA - fila 0, columna 0)
+                if fila_actual = 0 then
+                    r_out_temp(0) <= '0';  -- Rojo
+                end if;
+                
+                -- LED Azul (MEDIO - fila 1, columna 0)
+                if fila_actual = 1 then
+                    b_out_temp(0) <= '0';  -- Azul
+                end if;
+                
+                -- LED Verde (ABAJO - fila 2, columna 0)
+                if fila_actual = 2 then
+                    g_out_temp(0) <= '0';  -- Verde
+                end if;
+                
+                -- LED BLANCO DE SELECCIÓN (misma fila, columna 1)
+                if fila_actual = color_seleccionado then
+                    r_out_temp(1) <= '0';  -- Blanco
+                    g_out_temp(1) <= '0';
+                    b_out_temp(1) <= '0';
+                end if;
+                
+            when ESTADO_CONFIRMAR_COLOR =>
+                -- Mostrar patrón del número
+                for col in 0 to 7 loop
+                    if patron_fila_8x8(col) = '1' then
+                        -- Texto en blanco
+                        r_out_temp(col) <= '0';
+                        g_out_temp(col) <= '0';
+                        b_out_temp(col) <= '0';
+                    else
+                        -- Fondo según color
+                        r_out_temp(col) <= not color_fondo(2);
+                        g_out_temp(col) <= not color_fondo(1);
+                        b_out_temp(col) <= not color_fondo(0);
+                    end if;
+                end loop;
+                
+            when ESTADO_INGRESO_NUMERO =>
+                -- Mostrar dos dígitos en las filas 3-7
+                if mostrar_digitos = '1' then
+                    -- Dígito izquierdo (decena) - columnas 1-3
+                    for col_bit in 0 to 2 loop
+                        if dato_decena_5x3(col_bit) = '1' then
+                            case col_bit is
+                                when 0 => r_out_temp(3) <= '0';  -- Bit 0 -> col 3
+                                when 1 => r_out_temp(2) <= '0';  -- Bit 1 -> col 2
+                                when 2 => r_out_temp(1) <= '0';  -- Bit 2 -> col 1
+                                when others => null;
+                            end case;
+                        end if;
+                    end loop;
+                    
+                    -- Dígito derecho (unidad) - columnas 5-7
+                    for col_bit in 0 to 2 loop
+                        if dato_unidad_5x3(col_bit) = '1' then
+                            case col_bit is
+                                when 0 => r_out_temp(7) <= '0';  -- Bit 0 -> col 7
+                                when 1 => r_out_temp(6) <= '0';  -- Bit 1 -> col 6
+                                when 2 => r_out_temp(5) <= '0';  -- Bit 2 -> col 5
+                                when others => null;
+                            end case;
+                        end if;
+                    end loop;
+                end if;
+                
+            when ESTADO_GIRO_RULETA | ESTADO_RESULTADO_RULETA =>
+                -- Verificar si debemos mostrar el efecto de parpadeo
+                if estado_actual = ESTADO_RESULTADO_RULETA and resultado_ruleta = '1' then
+                    -- Efecto de parpadeo lento cuando gana
+                    if bit_parpadeo_lento = '1' then
+                        -- Pantalla blanca
+                        for col in 0 to 7 loop
+                            r_out_temp(col) <= '0';
+                            g_out_temp(col) <= '0';
+                            b_out_temp(col) <= '0';
+                        end loop;
+                    else
+                        -- Mostrar número de ruleta normalmente
+                        for col in 0 to 7 loop
+                            if patron_fila_8x8(col) = '1' then
+                                -- Mostrar el NÚMERO en BLANCO
+                                r_out_temp(col) <= '0';
+                                g_out_temp(col) <= '0';
+                                b_out_temp(col) <= '0';
+                            else
+                                -- Mostrar el FONDO según el color de la ruleta
+                                case color_ruleta is
+                                    when 0 =>  -- Rojo
+                                        r_out_temp(col) <= '0';
+                                        g_out_temp(col) <= '1';
+                                        b_out_temp(col) <= '1';
+                                    when 1 =>  -- Azul
+                                        r_out_temp(col) <= '1';
+                                        g_out_temp(col) <= '1';
+                                        b_out_temp(col) <= '0';
+                                    when 2 =>  -- Verde
+                                        r_out_temp(col) <= '1';
+                                        g_out_temp(col) <= '0';
+                                        b_out_temp(col) <= '1';
+                                    when others =>
+                                        r_out_temp(col) <= '1';
+                                        g_out_temp(col) <= '1';
+                                        b_out_temp(col) <= '1';
+                                end case;
+                            end if;
+                        end loop;
+                    end if;
+                else
+                    -- Mostrar número de ruleta normalmente (giro o resultado sin ganar)
+                    for col in 0 to 7 loop
+                        if patron_fila_8x8(col) = '1' then
+                            -- Mostrar el NÚMERO en BLANCO
+                            r_out_temp(col) <= '0';
+                            g_out_temp(col) <= '0';
+                            b_out_temp(col) <= '0';
+                        else
+                            -- Mostrar el FONDO según el color de la ruleta
+                            case color_ruleta is
+                                when 0 =>  -- Rojo
+                                    r_out_temp(col) <= '0';
+                                    g_out_temp(col) <= '1';
+                                    b_out_temp(col) <= '1';
+                                when 1 =>  -- Azul
+                                    r_out_temp(col) <= '1';
+                                    g_out_temp(col) <= '1';
+                                    b_out_temp(col) <= '0';
+                                when 2 =>  -- Verde
+                                    r_out_temp(col) <= '1';
+                                    g_out_temp(col) <= '0';
+                                    b_out_temp(col) <= '1';
+                                when others =>
+                                    r_out_temp(col) <= '1';
+                                    g_out_temp(col) <= '1';
+                                    b_out_temp(col) <= '1';
+                            end case;
+                        end if;
+                    end loop;
+                end if;
+                
+            when ESTADO_ERROR_X =>
+                -- Mostrar X en toda la pantalla
+                for col in 0 to 7 loop
+                    if patron_fila_8x8(col) = '1' then
+                        -- X en blanco
+                        r_out_temp(col) <= '0';
+                        g_out_temp(col) <= '0';
+                        b_out_temp(col) <= '0';
+                    else
+                        -- Fondo rojo
+                        r_out_temp(col) <= '0';
+                        g_out_temp(col) <= '1';
+                        b_out_temp(col) <= '1';
+                    end if;
+                end loop;
+                
+        end case;
+    end process;
+
+end Behavioral;
