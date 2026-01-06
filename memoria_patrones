@@ -1,0 +1,131 @@
+
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
+
+entity memoria_patrones is
+    Port (
+        clk       : in  std_logic;
+        direccion : in  integer range 0 to 79;  -- 10 números × 8 filas = 80 posiciones
+        dato_out  : out std_logic_vector(7 downto 0)
+    );
+end memoria_patrones;
+
+architecture Behavioral of memoria_patrones is
+
+    type memoria_type is array (0 to 79) of std_logic_vector(7 downto 0);
+    
+    -- MEMORIA: '1' = PÍXEL DEL NÚMERO (BLANCO), '0' = FONDO (COLOR)
+    -- PATRONES VOLTEADOS COMO ESPEJO (horizontalmente)
+    constant memoria_rom : memoria_type := (
+        -- NÚMERO 0 volteado (posición 0-7)
+        "00111100",  -- ..1111.. (igual)
+        "01100110",  -- .11..11. (igual)
+        "01100110",  -- .11..11. (igual)
+        "01100110",  -- .11..11. (igual)
+        "01100110",  -- .11..11. (igual)
+        "01100110",  -- .11..11. (igual)
+        "00111100",  -- .11..11. (igual)
+        "00000000",  -- ..1111.. (igual)
+        
+        -- NÚMERO 1 volteado (posición 8-15)
+        "00011000",  -- ..11... (igual)
+        "00011100",  -- ...111. (volteado de 00111000)
+        "00011000",  -- ..11... (igual)
+        "00011000",  -- ..11... (igual)
+        "00011000",  -- ..11... (igual)
+        "00011000",  -- ..11... (igual)
+        "00111100",  -- ..11... (igual)
+        "00000000",  -- .111111. (igual)
+        
+        -- NÚMERO 2 volteado (posición 16-23)
+        "00111100",  -- ..1111.. (igual)
+        "01100110",  -- .11..11. (igual)
+        "01100000",  -- .11..... (volteado de 00000110)
+        "00110000",  -- ..11.... (volteado de 00001100)
+        "00011000",  -- ...11... (igual)
+        "00001100",  -- ....11.. (volteado de 00110000)
+        "01111110",  -- .....11. (volteado de 01100000)
+        "00000000",  -- .111111. (igual)
+        
+        -- NÚMERO 3 volteado (posición 24-31)
+        "00111100",  -- ..1111.. (igual)
+        "01100110",  -- .11..11. (igual)
+        "01100000",  -- .11..... (volteado de 00000110)
+        "00111000",  -- ..111... (volteado de 00011100)
+        "01100000",  -- .11..... (volteado de 00000110)
+        "01100110",  -- .11..11. (igual)
+        "00111100",  -- ..1111.. (igual)
+        "00000000",  -- ........
+        
+        -- NÚMERO 4 volteado (posición 32-39)
+        "00110000",  -- ..11.... (volteado de 00001100)
+        "00111000",  -- ..111... (volteado de 00011100)
+        "00111100",  -- ..1111.. (igual)
+        "00110110",  -- ..11.11. (volteado de 01101100)
+        "01111111",  -- ..11..11 (volteado de 11001100)
+        "00110000",  -- .1111111 (volteado de 11111110)
+        "00110000",  -- ..11.... (volteado de 00001100)
+        "00000000",  -- ..11.... (volteado de 00001100)
+        
+        -- NÚMERO 5 volteado (posición 40-47)
+        "00111110",  -- .111111. (igual)
+        "00000110",  -- .....11. (volteado de 01100000)
+        "00111110",  -- ..11111. (volteado de 01111100)
+        "01100000",  -- .11..... (volteado de 00000110)
+        "01100000",  -- .11..... (volteado de 00000110)
+        "01100110",  -- .11..11. (igual)
+        "00111100",  -- ..1111.. (igual)
+        "00000000",  -- ........
+        
+        -- NÚMERO 6 volteado (posición 48-55)
+        "00111100",  -- ..1111.. (igual)
+        "01100110",  -- .11..11. (igual)
+        "00000110",  -- .....11. (volteado de 01100000)
+        "00111110",  -- ..11111. (volteado de 01111100)
+        "01100110",  -- .11..11. (igual)
+        "01100110",  -- .11..11. (igual)
+        "00111100",  -- ..1111.. (igual)
+        "00000000",  -- ........
+        
+        -- NÚMERO 7 volteado (posición 56-63)
+        "01111110",  -- .111111. (igual)
+        "01100000",  -- .11..... (volteado de 00000110)
+        "00110000",  -- ..11.... (volteado de 00001100)
+        "00011000",  -- ...11... (igual)
+        "00001100",  -- ....11.. (volteado de 00110000)
+        "00000110",  -- .....11. (volteado de 01100000)
+        "00000110",  -- .....11. (volteado de 01100000)
+        "00000000",  -- ........
+        
+        -- NÚMERO 8 volteado (posición 64-71)
+        "00111100",  -- ..1111.. (igual)
+        "01100110",  -- .11..11. (igual)
+        "01100110",  -- .11..11. (igual)
+        "00111100",  -- ..1111.. (igual)
+        "01100110",  -- .11..11. (igual)
+        "01100110",  -- .11..11. (igual)
+        "00111100",  -- ..1111.. (igual)
+        "00000000",  -- ........
+        
+        -- NÚMERO 9 volteado (posición 72-79)
+        "00111100",  -- ..1111.. (igual)
+        "01100110",  -- .11..11. (igual)
+        "01100110",  -- .11..11. (igual)
+        "01111100",  -- .11111.. (volteado de 00111110)
+        "01100000",  -- .11..... (volteado de 00000110)
+        "01100110",  -- .11..11. (igual)
+        "00111100",  -- ..1111.. (igual)
+        "00000000"   -- ........
+    );
+
+begin
+
+    process(clk)
+    begin
+        if rising_edge(clk) then
+            dato_out <= memoria_rom(direccion);
+        end if;
+    end process;
+
+end Behavioral;
