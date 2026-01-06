@@ -1,0 +1,100 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
+
+entity memoria_digitos_5x3 is
+    Port (
+        clk       : in  std_logic;
+        direccion : in  integer range 0 to 49;  -- 10 dígitos × 5 filas = 50 posiciones
+        dato_out  : out std_logic_vector(2 downto 0)  -- 3 bits por fila
+    );
+end memoria_digitos_5x3;
+
+architecture Behavioral of memoria_digitos_5x3 is
+
+    type memoria_type is array (0 to 49) of std_logic_vector(2 downto 0);
+    
+    -- MEMORIA: Patrones de 5x3 para dígitos 0-9
+    -- '1' = PÍXEL ENCENDIDO, '0' = PÍXEL APAGADO
+    constant memoria_digitos : memoria_type := (
+        -- Dígito 0 (posiciones 0-4)
+        "111",  -- fila 0: ###
+        "101",  -- fila 1: # #
+        "101",  -- fila 2: # #
+        "101",  -- fila 3: # #
+        "111",  -- fila 4: ###
+        
+        -- Dígito 1 (posiciones 5-9)
+        "010",  -- fila 0:  #
+        "110",  -- fila 1: ##
+        "010",  -- fila 2:  #
+        "010",  -- fila 3:  #
+        "111",  -- fila 4: ###
+        
+        -- Dígito 2 (posiciones 10-14)
+        "111",  -- fila 0: ###
+        "001",  -- fila 1:   #
+        "111",  -- fila 2: ###
+        "100",  -- fila 3: #
+        "111",  -- fila 4: ###
+        
+        -- Dígito 3 (posiciones 15-19)
+        "111",  -- fila 0: ###
+        "001",  -- fila 1:   #
+        "111",  -- fila 2: ###
+        "001",  -- fila 3:   #
+        "111",  -- fila 4: ###
+        
+        -- Dígito 4 (posiciones 20-24)
+        "101",  -- fila 0: # #
+        "101",  -- fila 1: # #
+        "111",  -- fila 2: ###
+        "001",  -- fila 3:   #
+        "001",  -- fila 4:   #
+        
+        -- Dígito 5 (posiciones 25-29) - YA TENEMOS EN MEMORIA 8x8
+        "111",  -- fila 0: ###
+        "100",  -- fila 1: #
+        "111",  -- fila 2: ###
+        "001",  -- fila 3:   #
+        "111",  -- fila 4: ###
+        
+        -- Dígito 6 (posiciones 30-34)
+        "111",  -- fila 0: ###
+        "100",  -- fila 1: #
+        "111",  -- fila 2: ###
+        "101",  -- fila 3: # #
+        "111",  -- fila 4: ###
+        
+        -- Dígito 7 (posiciones 35-39)
+        "111",  -- fila 0: ###
+        "001",  -- fila 1:   #
+        "001",  -- fila 2:   #
+        "001",  -- fila 3:   #
+        "001",  -- fila 4:   #
+        
+        -- Dígito 8 (posiciones 40-44)
+        "111",  -- fila 0: ###
+        "101",  -- fila 1: # #
+        "111",  -- fila 2: ###
+        "101",  -- fila 3: # #
+        "111",  -- fila 4: ###
+        
+        -- Dígito 9 (posiciones 45-49)
+        "111",  -- fila 0: ###
+        "101",  -- fila 1: # #
+        "111",  -- fila 2: ###
+        "001",  -- fila 3:   #
+        "001"   -- fila 4:   #
+    );
+
+begin
+
+    process(clk)
+    begin
+        if rising_edge(clk) then
+            dato_out <= memoria_digitos(direccion);
+        end if;
+    end process;
+
+end Behavioral;
